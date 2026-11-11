@@ -416,41 +416,113 @@ pub(crate) fn render_sidebar(
     let team_members = super::team::members(config.team.file.as_deref());
     let selected_team_space =
         super::team::selected_space(snapshot.focused_workspace_id.as_deref());
-    let mut offline_y = y
-        .saturating_add(u16::from(drew_box))
-        .saturating_add(config.spaces.row_gap.max(u16::from(drew_box)));
-    let mut seen_team_spaces: Vec<&str> = Vec::new();
+    let mut offline_labels: Vec<&str> = Vec::new();
     for member in &team_members {
         let label = member.workspace.as_str();
-        if label.is_empty()
-            || seen_team_spaces.contains(&label)
-            || snapshot
+        if !label.is_empty()
+            && !offline_labels.contains(&label)
+            && !snapshot
                 .workspaces
                 .iter()
                 .any(|workspace| workspace.label == label)
         {
-            continue;
+            offline_labels.push(label);
         }
-        seen_team_spaces.push(label);
-        if offline_y >= body.bottom() {
-            break;
+    }
+    let offline_text_style = |selected: bool| {
+        let style = super::team::offline_style(&config.team, palette.subtext0);
+        if selected {
+            style.fg(palette.text).add_modifier(Modifier::BOLD)
+        } else {
+            style
         }
-        let rect = Rect::new(body.x, offline_y, content_width, 1);
-        let mut style = super::team::offline_style(&config.team, palette.subtext0);
-        if selected_team_space.as_deref() == Some(label) {
-            buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
-            style = style.fg(palette.text).add_modifier(Modifier::BOLD);
+    };
+    if boxed {
+        // Offline boxes continue the shared-border column of the live entries.
+        let border = Style::default().fg(palette.overlay0);
+        let accent = Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD);
+        let mut box_y = y;
+        let mut selected_box: Option<Rect> = None;
+        let mut drew_offline = false;
+        for label in &offline_labels {
+            if box_y.saturating_add(2) >= body.bottom() || content_width < 4 {
+                break;
+            }
+            let rect = Rect::new(body.x, box_y, content_width, 2);
+            render_space_box_top(buffer, rect, box_y == body.y, border);
+            let content = Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, 1);
+            let selected = selected_team_space.as_deref() == Some(*label);
+            if selected {
+                buffer.set_style(content, Style::default().bg(palette.active_row_bg));
+                selected_box = Some(rect);
+            }
+            put_text(
+                buffer,
+                content.x.saturating_add(1),
+                content.y,
+                content.width.saturating_sub(1),
+                &format!("{} {label}", config.team.offline_icon),
+                offline_text_style(selected),
+            );
+            hits.team_spaces.push((rect, label.to_string()));
+            box_y = box_y.saturating_add(2);
+            drew_offline = true;
         }
-        put_text(
-            buffer,
-            rect.x.saturating_add(1),
-            rect.y,
-            rect.width.saturating_sub(1),
-            &format!("{} {label}", config.team.offline_icon),
-            style,
-        );
-        hits.team_spaces.push((rect, label.to_string()));
-        offline_y = offline_y.saturating_add(1 + config.spaces.row_gap);
+        if drew_offline {
+            render_space_box_line(
+                buffer,
+                Rect::new(body.x, box_y, content_width, 1),
+                ('└', '┘'),
+                border,
+            );
+            if let Some(rect) = accent_box.filter(|rect| rect.bottom() == y) {
+                render_space_box_line(
+                    buffer,
+                    Rect::new(rect.x, y, rect.width, 1),
+                    ('├', '┤'),
+                    accent,
+                );
+            }
+            if let Some(rect) = selected_box {
+                render_space_box_top(buffer, rect, rect.y == body.y, accent);
+                let bottom = rect.bottom();
+                let corners = if bottom == box_y {
+                    ('└', '┘')
+                } else {
+                    ('├', '┤')
+                };
+                render_space_box_line(
+                    buffer,
+                    Rect::new(rect.x, bottom, rect.width, 1),
+                    corners,
+                    accent,
+                );
+            }
+        }
+    } else {
+        let mut offline_y = y.saturating_add(config.spaces.row_gap);
+        for label in &offline_labels {
+            if offline_y >= body.bottom() {
+                break;
+            }
+            let rect = Rect::new(body.x, offline_y, content_width, 1);
+            let selected = selected_team_space.as_deref() == Some(*label);
+            if selected {
+                buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
+            }
+            put_text(
+                buffer,
+                rect.x.saturating_add(1),
+                rect.y,
+                rect.width.saturating_sub(1),
+                &format!("{} {label}", config.team.offline_icon),
+                offline_text_style(selected),
+            );
+            hits.team_spaces.push((rect, label.to_string()));
+            offline_y = offline_y.saturating_add(1 + config.spaces.row_gap);
+        }
     }
 
     if show_scrollbar {
