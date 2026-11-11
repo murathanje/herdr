@@ -412,6 +412,47 @@ pub(crate) fn render_sidebar(
         }
     }
 
+    // Fork: roster spaces without any open pane stay listed below the live ones.
+    let team_members = super::team::members(config.team.file.as_deref());
+    let selected_team_space =
+        super::team::selected_space(snapshot.focused_workspace_id.as_deref());
+    let mut offline_y = y
+        .saturating_add(u16::from(drew_box))
+        .saturating_add(config.spaces.row_gap.max(u16::from(drew_box)));
+    let mut seen_team_spaces: Vec<&str> = Vec::new();
+    for member in &team_members {
+        let label = member.workspace.as_str();
+        if label.is_empty()
+            || seen_team_spaces.contains(&label)
+            || snapshot
+                .workspaces
+                .iter()
+                .any(|workspace| workspace.label == label)
+        {
+            continue;
+        }
+        seen_team_spaces.push(label);
+        if offline_y >= body.bottom() {
+            break;
+        }
+        let rect = Rect::new(body.x, offline_y, content_width, 1);
+        let mut style = super::team::offline_style(&config.team, palette.subtext0);
+        if selected_team_space.as_deref() == Some(label) {
+            buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
+            style = style.fg(palette.text).add_modifier(Modifier::BOLD);
+        }
+        put_text(
+            buffer,
+            rect.x.saturating_add(1),
+            rect.y,
+            rect.width.saturating_sub(1),
+            &format!("{} {label}", config.team.offline_icon),
+            style,
+        );
+        hits.team_spaces.push((rect, label.to_string()));
+        offline_y = offline_y.saturating_add(1 + config.spaces.row_gap);
+    }
+
     if show_scrollbar {
         let track = Rect::new(body.right().saturating_sub(1), body.y, 1, body.height);
         hits.workspace_scrollbar = track;

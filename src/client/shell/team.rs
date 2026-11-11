@@ -58,3 +58,46 @@ pub(super) fn run_command(command: &[String], verb: &str, args: &[&str]) {
     }
     let _ = process.spawn();
 }
+
+type Selection = Option<(String, Option<String>)>;
+
+static SELECTED: Mutex<Selection> = Mutex::new(None);
+
+/// Selects a roster space that has no open pane (or clears the selection).
+/// `focused` is the focused live workspace at that moment.
+pub(super) fn select_space(label: Option<String>, focused: Option<String>) {
+    let mut selected = SELECTED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    *selected = label.map(|label| (label, focused));
+}
+
+/// The selected pane-less space; dropped as soon as the focused workspace changes.
+pub(super) fn selected_space(focused: Option<&str>) -> Option<String> {
+    let mut selected = SELECTED.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    match selected.as_ref() {
+        Some((label, at)) if at.as_deref() == focused => Some(label.clone()),
+        Some(_) => {
+            *selected = None;
+            None
+        }
+        None => None,
+    }
+}
+
+pub(super) fn offline_style(
+    team: &crate::config::TeamSidebarConfig,
+    fallback: ratatui::style::Color,
+) -> ratatui::style::Style {
+    use ratatui::style::{Modifier, Style};
+
+    let mut style = Style::default().fg(team
+        .offline_fg
+        .map(|color| color.ratatui())
+        .unwrap_or(fallback));
+    if team.offline_dim {
+        style = style.add_modifier(Modifier::DIM);
+    }
+    if team.offline_bold {
+        style = style.add_modifier(Modifier::BOLD);
+    }
+    style
+}

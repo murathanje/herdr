@@ -654,6 +654,29 @@ impl ClientShellState {
     pub(super) fn handle_mouse(&mut self, mouse: MouseEvent, outcome: &mut ClientShellInput) {
         self.update_link_hover(mouse, outcome);
         let point = (mouse.column, mouse.row);
+        if mouse.kind == MouseEventKind::Down(MouseButton::Left) && self.overlay.is_none() {
+            let focused = self
+                .snapshot
+                .as_deref()
+                .and_then(|snapshot| snapshot.focused_workspace_id.clone());
+            let team_space = self
+                .hits
+                .team_spaces
+                .iter()
+                .find(|(rect, _)| super::contains(*rect, point))
+                .map(|(_, label)| label.clone());
+            if let Some(label) = team_space {
+                super::team::select_space(Some(label), focused);
+                outcome.repaint = true;
+                return;
+            }
+            if !super::contains(self.hits.agent_body, point)
+                && super::team::selected_space(focused.as_deref()).is_some()
+            {
+                super::team::select_space(None, None);
+                outcome.repaint = true;
+            }
+        }
         if self.mode == ClientShellMode::Navigate
             && self.workspace_preview_action_blocked()
             && self.overlay.is_none()

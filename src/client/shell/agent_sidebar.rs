@@ -69,8 +69,17 @@ pub(super) fn render_agent_panel(
         return;
     }
 
-    let mut rows = agent_rows(snapshot, config, None);
-    rows.extend(offline_team_rows(snapshot, config));
+    let selected_space = super::team::selected_space(snapshot.focused_workspace_id.as_deref());
+    let mut rows = if selected_space.is_some() {
+        Vec::new()
+    } else {
+        agent_rows(snapshot, config, None)
+    };
+    rows.extend(offline_team_rows(
+        snapshot,
+        config,
+        selected_space.as_deref(),
+    ));
     render_agent_list(
         buffer,
         area,
@@ -288,6 +297,7 @@ pub(super) fn agent_rows(
 pub(super) fn offline_team_rows(
     snapshot: &ClientShellSnapshot,
     config: &ClientShellConfig,
+    selected_space: Option<&str>,
 ) -> Vec<AgentRow> {
     let members = super::team::members(config.team.file.as_deref());
     if members.is_empty() {
@@ -309,7 +319,10 @@ pub(super) fn offline_team_rows(
                     || agent.terminal_title_stripped.as_deref() == Some(member.name.as_str())
             })
         })
-        .filter(|member| !scoped || focused_label == Some(member.workspace.as_str()))
+        .filter(|member| match selected_space {
+            Some(label) => member.workspace == label,
+            None => !scoped || focused_label == Some(member.workspace.as_str()),
+        })
         .map(|member| AgentRow {
             pane_id: String::new(),
             status: crate::api::schema::AgentStatus::Unknown,
