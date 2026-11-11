@@ -75,6 +75,11 @@ impl ClientContextMenuOverlay {
                 ]);
                 items
             }
+            ClientContextMenuTarget::Agent { .. } => vec![item("Kapat", Action::CloseAgent)],
+            ClientContextMenuTarget::TeamMember { .. } => vec![
+                item("Aç", Action::OpenTeamMember),
+                item("Listeden çıkar", Action::RemoveTeamMember),
+            ],
         }
     }
 }
@@ -167,6 +172,36 @@ impl ClientShellState {
         }));
     }
 
+    pub(super) fn open_agent_context_menu(&mut self, pane_id: String, x: u16, y: u16) {
+        let name = self.snapshot.as_deref().and_then(|snapshot| {
+            snapshot
+                .agents
+                .iter()
+                .find(|agent| agent.pane_id == pane_id)
+                .and_then(|agent| {
+                    agent
+                        .name
+                        .clone()
+                        .or_else(|| agent.terminal_title_stripped.clone())
+                })
+        });
+        self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            target: ClientContextMenuTarget::Agent { pane_id, name },
+            x,
+            y,
+            highlighted: 0,
+        }));
+    }
+
+    pub(super) fn open_team_member_context_menu(&mut self, name: String, x: u16, y: u16) {
+        self.overlay = Some(ClientShellOverlay::ContextMenu(ClientContextMenuOverlay {
+            target: ClientContextMenuTarget::TeamMember { name },
+            x,
+            y,
+            highlighted: 0,
+        }));
+    }
+
     pub(super) fn move_context_menu_selection(&mut self, delta: isize) {
         let Some(ClientShellOverlay::ContextMenu(menu)) = self.overlay.as_mut() else {
             return;
@@ -213,6 +248,34 @@ impl ClientShellState {
                 action,
                 outcome,
             ),
+            ClientContextMenuTarget::Agent { pane_id, name } => {
+                if action == ClientContextMenuAction::CloseAgent {
+                    match name.filter(|_| !self.config.team.command.is_empty()) {
+                        // The roster command records the member, then closes the pane.
+                        Some(name) => super::team::run_command(
+                            &self.config.team.command,
+                            "kapat",
+                            &[name.as_str(), pane_id.as_str()],
+                        ),
+                        None => self.push_endpoint_method(
+                            crate::api::schema::Method::PaneClose(
+                                crate::api::schema::PaneTarget { pane_id },
+                            ),
+                            outcome,
+                        ),
+                    }
+                }
+            }
+            ClientContextMenuTarget::TeamMember { name } => {
+                let verb = match action {
+                    ClientContextMenuAction::OpenTeamMember => Some("ac"),
+                    ClientContextMenuAction::RemoveTeamMember => Some("sil"),
+                    _ => None,
+                };
+                if let Some(verb) = verb {
+                    super::team::run_command(&self.config.team.command, verb, &[name.as_str()]);
+                }
+            }
         }
         outcome.repaint = true;
     }

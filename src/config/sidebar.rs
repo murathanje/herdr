@@ -478,11 +478,22 @@ impl Default for SpacesSidebarConfig {
     }
 }
 
+/// Fork: team roster listed in the Agents panel even when a member has no open pane.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub struct TeamSidebarConfig {
+    /// JSON file holding `[{"name": "...", "workspace": "..."}]`.
+    pub file: Option<String>,
+    /// Command run as `<command> <ac|kapat|sil> <name> [pane_id]` from the roster menu.
+    pub command: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(default)]
 pub struct SidebarConfig {
     pub agents: AgentsSidebarConfig,
     pub spaces: SpacesSidebarConfig,
+    pub team: TeamSidebarConfig,
 }
 
 #[cfg(test)]

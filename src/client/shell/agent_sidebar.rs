@@ -15,6 +15,8 @@ pub(super) struct AgentRow {
     pub(super) status: crate::api::schema::AgentStatus,
     pub(super) focused: bool,
     pub(super) rows: Vec<Vec<crate::ui::ResolvedToken>>,
+    /// Fork: roster member without an open pane.
+    pub(super) offline: Option<String>,
 }
 
 pub(super) fn ordered_agent_pane_ids(
@@ -67,7 +69,8 @@ pub(super) fn render_agent_panel(
         return;
     }
 
-    let rows = agent_rows(snapshot, config, None);
+    let mut rows = agent_rows(snapshot, config, None);
+    rows.extend(offline_team_rows(snapshot, config));
     render_agent_list(
         buffer,
         area,
@@ -81,6 +84,20 @@ pub(super) fn render_agent_panel(
         hits,
         |row| row.rows.len(),
         |buffer, rect, row, hits| {
+            if let Some(name) = &row.offline {
+                hits.team_agents.push((rect, name.clone()));
+                put_text(
+                    buffer,
+                    rect.x.saturating_add(1),
+                    rect.y,
+                    rect.width.saturating_sub(1),
+                    &format!("\u{25cb} {name}"),
+                    Style::default()
+                        .fg(config.palette.overlay0)
+                        .add_modifier(Modifier::DIM),
+                );
+                return;
+            }
             hits.agents.push((rect, row.pane_id.clone()));
             render_agent_row(buffer, rect, row, config);
         },
@@ -245,6 +262,43 @@ pub(super) fn agent_rows(
         .collect()
 }
 
+/// Fork: roster members that have no live agent, scoped to the focused space
+/// while an agent view (space filter) is active.
+pub(super) fn offline_team_rows(
+    snapshot: &ClientShellSnapshot,
+    config: &ClientShellConfig,
+) -> Vec<AgentRow> {
+    let members = super::team::members(config.team.file.as_deref());
+    if members.is_empty() {
+        return Vec::new();
+    }
+    let focused_label = snapshot.focused_workspace_id.as_deref().and_then(|id| {
+        snapshot
+            .workspaces
+            .iter()
+            .find(|workspace| workspace.workspace_id == id)
+            .map(|workspace| workspace.label.as_str())
+    });
+    let scoped = snapshot.agent_view_label.is_some();
+    members
+        .into_iter()
+        .filter(|member| {
+            !snapshot.agents.iter().any(|agent| {
+                agent.name.as_deref() == Some(member.name.as_str())
+                    || agent.terminal_title_stripped.as_deref() == Some(member.name.as_str())
+            })
+        })
+        .filter(|member| !scoped || focused_label == Some(member.workspace.as_str()))
+        .map(|member| AgentRow {
+            pane_id: String::new(),
+            status: crate::api::schema::AgentStatus::Unknown,
+            focused: false,
+            rows: Vec::new(),
+            offline: Some(member.name),
+        })
+        .collect()
+}
+
 pub(super) fn agent_row(
     snapshot: &ClientShellSnapshot,
     pane_id: &str,
@@ -315,6 +369,7 @@ pub(super) fn agent_row(
         status: agent.agent_status,
         focused: agent.focused,
         rows,
+        offline: None,
     })
 }
 
