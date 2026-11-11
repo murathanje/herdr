@@ -479,13 +479,35 @@ impl Default for SpacesSidebarConfig {
 }
 
 /// Fork: team roster listed in the Agents panel even when a member has no open pane.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct TeamSidebarConfig {
     /// JSON file holding `[{"name": "...", "workspace": "..."}]`.
     pub file: Option<String>,
     /// Command run as `<command> <ac|kapat|sil> <name> [pane_id]` from the roster menu.
     pub command: Vec<String>,
+    /// Icon drawn before a member without an open pane.
+    pub offline_icon: String,
+    /// Text colour of offline members (`#RGB` / `#RRGGBB`); theme subtext when unset.
+    pub offline_fg: Option<SidebarTokenColor>,
+    pub offline_dim: bool,
+    pub offline_bold: bool,
+    /// Right-aligned note on offline rows, e.g. "kapali"; empty hides it.
+    pub offline_label: String,
+}
+
+impl Default for TeamSidebarConfig {
+    fn default() -> Self {
+        Self {
+            file: None,
+            command: Vec::new(),
+            offline_icon: "\u{25cb}".to_string(),
+            offline_fg: None,
+            offline_dim: false,
+            offline_bold: false,
+            offline_label: String::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]

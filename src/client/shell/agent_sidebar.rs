@@ -86,16 +86,37 @@ pub(super) fn render_agent_panel(
         |buffer, rect, row, hits| {
             if let Some(name) = &row.offline {
                 hits.team_agents.push((rect, name.clone()));
+                let team = &config.team;
+                let mut style = Style::default().fg(team
+                    .offline_fg
+                    .map(|color| color.ratatui())
+                    .unwrap_or(config.palette.subtext0));
+                if team.offline_dim {
+                    style = style.add_modifier(Modifier::DIM);
+                }
+                if team.offline_bold {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
                 put_text(
                     buffer,
                     rect.x.saturating_add(1),
                     rect.y,
                     rect.width.saturating_sub(1),
-                    &format!("\u{25cb} {name}"),
-                    Style::default()
-                        .fg(config.palette.overlay0)
-                        .add_modifier(Modifier::DIM),
+                    &format!("{} {name}", team.offline_icon),
+                    style,
                 );
+                let label_width = display_width(&team.offline_label) as u16;
+                let used = display_width(name) as u16 + display_width(&team.offline_icon) as u16 + 3;
+                if label_width > 0 && used + label_width < rect.width {
+                    put_text(
+                        buffer,
+                        rect.right().saturating_sub(label_width + 1),
+                        rect.y,
+                        label_width,
+                        &team.offline_label,
+                        Style::default().fg(config.palette.overlay0),
+                    );
+                }
                 return;
             }
             hits.agents.push((rect, row.pane_id.clone()));
