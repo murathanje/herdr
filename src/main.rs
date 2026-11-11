@@ -359,6 +359,8 @@ const DEFAULT_CONFIG: &str = r##"# herdr configuration
 # Blank rows between space entries. Set to 1 to restore the previous spacing.
 # row_gap = 0
 # rows = [["state_icon", "workspace"], ["branch", "git_status"]]
+# Draw each space as a bordered box; the focused space gets an accent border.
+# boxed = false
 
 # Background notification popup delivery
 [ui.toast]

@@ -236,6 +236,8 @@ pub(crate) fn render_sidebar(
             .saturating_sub(WORKSPACE_HEADER_ROWS + 1),
     );
     hits.workspace_body = body;
+    let boxed = config.spaces.boxed && body.width >= 6;
+    let box_padding = if boxed { 2 } else { 0 };
     let row_heights = entries
         .iter()
         .map(|entry| {
@@ -251,9 +253,10 @@ pub(crate) fn render_sidebar(
                     )
                     .len()
                     .max(1)
-                    .min(u16::MAX as usize) as u16
+                    .min(u16::MAX as usize - 2) as u16
+                        + box_padding
                 })
-                .unwrap_or(1)
+                .unwrap_or(1 + box_padding)
         })
         .collect::<Vec<_>>();
     let gaps = entries
@@ -305,11 +308,17 @@ pub(crate) fn render_sidebar(
         };
         let status = displayed_workspace_status(snapshot, workspace, state.collapsed_groups);
         let rows = workspace_rows(workspace, status, entry.indented, &config.spaces);
-        let row_height = (rows.len().max(1).min(u16::MAX as usize) as u16).min(body.height);
+        let row_height = ((rows.len().max(1).min(u16::MAX as usize - 2) as u16) + box_padding)
+            .min(body.height);
         if y.saturating_add(row_height) > body.bottom() {
             break;
         }
         let rect = Rect::new(body.x, y, content_width, row_height);
+        let content_rect = if boxed && rect.height >= 3 && rect.width >= 4 {
+            Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
+        } else {
+            rect
+        };
         let selected = state.selected_workspace_id.is_some_and(|target| {
             target.matches(state.active_endpoint_id, &workspace.workspace_id)
         });
@@ -323,7 +332,7 @@ pub(crate) fn render_sidebar(
         }
         render_workspace_rows(
             buffer,
-            rect,
+            content_rect,
             status,
             config.status_indicators,
             entry,
@@ -334,9 +343,19 @@ pub(crate) fn render_sidebar(
             dragged,
             palette,
         );
+        if content_rect != rect {
+            let border_style = if workspace.focused || selected {
+                Style::default()
+                    .fg(palette.accent)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(palette.surface_dim)
+            };
+            render_space_box(buffer, rect, border_style);
+        }
         let group_toggle = render_parent_group_toggle(
             buffer,
-            rect,
+            content_rect,
             snapshot,
             entry.index,
             state.collapsed_groups,
@@ -453,6 +472,18 @@ pub(crate) fn render_sidebar(
         "«",
         Style::default().fg(palette.overlay0),
     );
+}
+
+fn render_space_box(buffer: &mut Buffer, rect: Rect, style: Style) {
+    let inner = "─".repeat(rect.width.saturating_sub(2) as usize);
+    let bottom = rect.bottom().saturating_sub(1);
+    let right = rect.right().saturating_sub(1);
+    put_text(buffer, rect.x, rect.y, rect.width, &format!("┌{inner}┐"), style);
+    put_text(buffer, rect.x, bottom, rect.width, &format!("└{inner}┘"), style);
+    for y in rect.y.saturating_add(1)..bottom {
+        put_text(buffer, rect.x, y, 1, "│", style);
+        put_text(buffer, right, y, 1, "│", style);
+    }
 }
 
 pub(crate) fn workspace_entries(

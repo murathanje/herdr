@@ -461,6 +461,8 @@ pub struct SpacesSidebarConfig {
     #[serde(deserialize_with = "deserialize_sidebar_rows")]
     pub rows: SpaceSidebarRows,
     pub row_gap: u16,
+    /// Draw each space entry as a bordered box; the focused space gets an accent border.
+    pub boxed: bool,
 }
 
 impl Default for SpacesSidebarConfig {
@@ -471,6 +473,7 @@ impl Default for SpacesSidebarConfig {
                 vec![SpaceSidebarToken::Branch, SpaceSidebarToken::GitStatus],
             ],
             row_gap: DEFAULT_SIDEBAR_ROW_GAP,
+            boxed: false,
         }
     }
 }
