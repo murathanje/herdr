@@ -482,7 +482,21 @@ impl App {
             prefix_keys,
             headless_size: config.headless_size(),
             agent_panel_sort,
-            agent_view_override: None,
+            agent_view_override: config.ui.agent_panel_current_space_only().then(|| {
+                crate::api::schema::AgentViewSetParams {
+                    source: "config:agent_panel_scope".to_string(),
+                    label: Some("space".to_string()),
+                    filter: Some(crate::api::schema::AgentViewFilter::Eq {
+                        field: crate::api::schema::AgentViewField::Builtin(
+                            crate::api::schema::AgentViewBuiltinField::WorkspaceId,
+                        ),
+                        value: crate::api::schema::AgentViewValue::Context {
+                            context: crate::api::schema::AgentViewContext::CurrentWorkspaceId,
+                        },
+                    }),
+                    sort: Vec::new(),
+                }
+            }),
             sidebar_agents: config.ui.sidebar.agents.clone(),
             sidebar_spaces: config.ui.sidebar.spaces.clone(),
             next_agent_state_change_seq: 0,

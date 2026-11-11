@@ -1232,6 +1232,14 @@ impl Default for UiConfig {
 }
 
 impl UiConfig {
+    /// Fork: `agent_panel_scope = "current"` limits the Agents panel to the presented space.
+    pub fn agent_panel_current_space_only(&self) -> bool {
+        matches!(
+            self._legacy_agent_panel_scope,
+            Some(LegacyAgentPanelScopeConfig::Current)
+        )
+    }
+
     pub fn mouse_scroll_lines(&self) -> usize {
         self.mouse_scroll_lines
             .map(NonZeroUsize::get)

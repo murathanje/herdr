@@ -237,10 +237,14 @@ pub(crate) fn render_sidebar(
     );
     hits.workspace_body = body;
     let boxed = config.spaces.boxed && body.width >= 6;
-    let box_padding = if boxed { 2 } else { 0 };
+    // Boxed entries share borders: one top line per entry plus one closing line.
+    let box_padding = u16::from(boxed);
+    let entry_count = entries.len();
     let row_heights = entries
         .iter()
-        .map(|entry| {
+        .enumerate()
+        .map(|(entry_index, entry)| {
+            let closing = u16::from(boxed && entry_index + 1 == entry_count);
             snapshot
                 .workspaces
                 .get(entry.index)
@@ -255,8 +259,9 @@ pub(crate) fn render_sidebar(
                     .max(1)
                     .min(u16::MAX as usize - 2) as u16
                         + box_padding
+                        + closing
                 })
-                .unwrap_or(1 + box_padding)
+                .unwrap_or(1 + box_padding + closing)
         })
         .collect::<Vec<_>>();
     let gaps = entries
@@ -265,7 +270,7 @@ pub(crate) fn render_sidebar(
         .map(|(index, _)| {
             entries
                 .get(index + 1)
-                .map_or(0, |next| u16::from(!next.indented) * config.spaces.row_gap)
+                .map_or(0, |next| u16::from(!next.indented && !boxed) * config.spaces.row_gap)
         })
         .collect::<Vec<_>>();
     let mut metrics = super::scroll::list_scroll_metrics(
@@ -302,20 +307,23 @@ pub(crate) fn render_sidebar(
     let show_scrollbar = metrics.max_offset_from_bottom > 0 && body.width > 1;
     let content_width = body.width.saturating_sub(u16::from(show_scrollbar));
     let mut y = body.y;
+    let mut drew_box = false;
+    let mut accent_box: Option<Rect> = None;
     for (entry_position, entry) in entries.iter().enumerate().skip(*state.workspace_scroll) {
         let Some(workspace) = snapshot.workspaces.get(entry.index) else {
             continue;
         };
         let status = displayed_workspace_status(snapshot, workspace, state.collapsed_groups);
         let rows = workspace_rows(workspace, status, entry.indented, &config.spaces);
+        let closing = u16::from(boxed && entry_position + 1 == entry_count);
         let row_height = ((rows.len().max(1).min(u16::MAX as usize - 2) as u16) + box_padding)
             .min(body.height);
-        if y.saturating_add(row_height) > body.bottom() {
+        if y.saturating_add(row_height + closing) > body.bottom() {
             break;
         }
         let rect = Rect::new(body.x, y, content_width, row_height);
-        let content_rect = if boxed && rect.height >= 3 && rect.width >= 4 {
-            Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 2)
+        let content_rect = if boxed && rect.height >= 2 && rect.width >= 4 {
+            Rect::new(rect.x + 1, rect.y + 1, rect.width - 2, rect.height - 1)
         } else {
             rect
         };
@@ -324,11 +332,11 @@ pub(crate) fn render_sidebar(
         });
         let dragged = state.dragged_workspace_id == Some(workspace.workspace_id.as_str());
         if selected {
-            buffer.set_style(rect, Style::default().bg(palette.selection_bg));
+            buffer.set_style(content_rect, Style::default().bg(palette.selection_bg));
         } else if dragged {
-            buffer.set_style(rect, Style::default().bg(palette.surface1));
+            buffer.set_style(content_rect, Style::default().bg(palette.surface1));
         } else if workspace.focused {
-            buffer.set_style(rect, Style::default().bg(palette.active_row_bg));
+            buffer.set_style(content_rect, Style::default().bg(palette.active_row_bg));
         }
         render_workspace_rows(
             buffer,
@@ -344,14 +352,16 @@ pub(crate) fn render_sidebar(
             palette,
         );
         if content_rect != rect {
-            let border_style = if workspace.focused || selected {
-                Style::default()
-                    .fg(palette.accent)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(palette.surface_dim)
-            };
-            render_space_box(buffer, rect, border_style);
+            render_space_box_top(
+                buffer,
+                rect,
+                y == body.y,
+                Style::default().fg(palette.overlay0),
+            );
+            if workspace.focused || selected {
+                accent_box = Some(rect);
+            }
+            drew_box = true;
         }
         let group_toggle = render_parent_group_toggle(
             buffer,
@@ -370,8 +380,36 @@ pub(crate) fn render_sidebar(
         });
         let gap = entries
             .get(entry_position + 1)
-            .map_or(0, |next| u16::from(!next.indented) * config.spaces.row_gap);
+            .map_or(0, |next| u16::from(!next.indented && !boxed) * config.spaces.row_gap);
         y = y.saturating_add(row_height + gap);
+    }
+    if drew_box && y < body.bottom() {
+        render_space_box_line(
+            buffer,
+            Rect::new(body.x, y, content_width, 1),
+            ('└', '┘'),
+            Style::default().fg(palette.overlay0),
+        );
+    }
+    if let Some(rect) = accent_box {
+        let accent = Style::default()
+            .fg(palette.accent)
+            .add_modifier(Modifier::BOLD);
+        render_space_box_top(buffer, rect, rect.y == body.y, accent);
+        let bottom = rect.bottom();
+        if bottom < body.bottom() {
+            let corners = if bottom == y {
+                ('└', '┘')
+            } else {
+                ('├', '┤')
+            };
+            render_space_box_line(
+                buffer,
+                Rect::new(rect.x, bottom, rect.width, 1),
+                corners,
+                accent,
+            );
+        }
     }
 
     if show_scrollbar {
@@ -474,13 +512,34 @@ pub(crate) fn render_sidebar(
     );
 }
 
-fn render_space_box(buffer: &mut Buffer, rect: Rect, style: Style) {
+fn render_space_box_line(buffer: &mut Buffer, rect: Rect, corners: (char, char), style: Style) {
     let inner = "─".repeat(rect.width.saturating_sub(2) as usize);
-    let bottom = rect.bottom().saturating_sub(1);
+    put_text(
+        buffer,
+        rect.x,
+        rect.y,
+        rect.width,
+        &format!("{}{inner}{}", corners.0, corners.1),
+        style,
+    );
+}
+
+/// Top border plus side borders of one boxed space entry. The bottom border is
+/// the next entry's top border, or the closing line after the last entry.
+fn render_space_box_top(buffer: &mut Buffer, rect: Rect, first: bool, style: Style) {
+    let corners = if first {
+        ('┌', '┐')
+    } else {
+        ('├', '┤')
+    };
+    render_space_box_line(
+        buffer,
+        Rect::new(rect.x, rect.y, rect.width, 1),
+        corners,
+        style,
+    );
     let right = rect.right().saturating_sub(1);
-    put_text(buffer, rect.x, rect.y, rect.width, &format!("┌{inner}┐"), style);
-    put_text(buffer, rect.x, bottom, rect.width, &format!("└{inner}┘"), style);
-    for y in rect.y.saturating_add(1)..bottom {
+    for y in rect.y.saturating_add(1)..rect.bottom() {
         put_text(buffer, rect.x, y, 1, "│", style);
         put_text(buffer, right, y, 1, "│", style);
     }
